@@ -1,0 +1,8 @@
+{
+  "name": "e-District PDF Tools",
+  "description": "Premium PDF processing suite for Land Records, including Auto-Rename and Smart Merge for e-District applications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

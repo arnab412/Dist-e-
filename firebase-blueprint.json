@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a user of the LandRec Optimizer platform.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "plan": { "type": "string", "enum": ["free", "pro"] },
+        "dailyLimit": { "type": "integer" },
+        "currentDayUsage": { "type": "integer" },
+        "lastResetDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "plan"]
+    },
+    "ProcessedFile": {
+      "title": "Processed File",
+      "description": "Record of a processed PDF file.",
+      "type": "object",
+      "properties": {
+        "fileName": { "type": "string" },
+        "fileSize": { "type": "integer" },
+        "processedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "processed", "error"] },
+        "userId": { "type": "string" }
+      },
+      "required": ["fileName", "processedAt", "status", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Top-level user profiles."
+    },
+    "/history/{historyId}": {
+      "schema": "ProcessedFile",
+      "description": "Historical records of processed batches or files for a user."
+    }
+  }
+}

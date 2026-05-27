@@ -1,0 +1,82 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'arnabsingharoy4@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    match /settings/global {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Match blocks
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && (!incoming().keys().hasAny(['isAdmin', 'isBanned']) || incoming().isAdmin == false);
+      allow update: if isAdmin() || (
+        isOwner(userId) && 
+        incoming().get('isAdmin', false) == existing().get('isAdmin', false) &&
+        incoming().get('isBanned', false) == existing().get('isBanned', false) &&
+        incoming().get('plan', 'free') == existing().get('plan', 'free')
+      );
+      allow delete: if isAdmin();
+      
+      match /history/{historyId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    match /history/{historyId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid || isAdmin();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /feedbacks/{feedbackId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+  }
+}
