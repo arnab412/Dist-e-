@@ -4,6 +4,7 @@ import {
   User as FirebaseUser,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   signOut
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, collection, addDoc } from 'firebase/firestore';
@@ -243,11 +244,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error('Google Sign-In Error:', error);
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    if (isMobile) {
+      // Use redirect directly on mobile to avoid popup blocking/flashing issues
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (error: any) {
+        console.error('Google Sign-In Redirect Error:', error);
+        handleSignInError(error);
+      }
+    } else {
+      // Try popup first on desktop
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (error: any) {
+        console.error('Google Sign-In Popup Error:', error);
+        
+        // If popup is blocked/closed, try redirect
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+          try {
+            await signInWithRedirect(auth, provider);
+          } catch (redirectError: any) {
+            console.error('Google Sign-In Redirect Error after popup fallback:', redirectError);
+            handleSignInError(redirectError);
+          }
+        } else {
+          handleSignInError(error);
+        }
+      }
     }
+  };
+
+  const handleSignInError = (error: any) => {
+    let message = `লগইন ব্যর্থ হয়েছে (Sign-In Failed): ${error.code || error.message}\n\n`;
+    
+    if (error.code === 'auth/operation-not-allowed') {
+      message += `🚨 সমাধান (Fix): আপনার নতুন Firebase Console > Authentication > Sign-in method-এ গিয়ে "Google" প্রোভাইডারটি Enable (অনুপাতিত) করুন।\n\n`;
+    } else if (error.code === 'auth/unauthorized-domain') {
+      message += `🚨 সমাধান (Fix): আপনার Vercel ডোমেনটি (${window.location.hostname}) Firebase Console > Authentication > Settings > Authorized Domains-এ যুক্ত করতে হবে।\n\n`;
+    } else {
+      message += `🚨 পরামর্শ:\n`;
+      message += `১. আপনার Firebase Console-এ Google Sign-in অপশন চালু আছে কিনা নিশ্চিত করুন।\n`;
+      message += `২. আপনার Vercel ডোমেনটি Firebase Console-এর Authorized Domains তালিকায় যুক্ত করুন।\n`;
+    }
+    
+    alert(message);
   };
 
   const logout = async () => {

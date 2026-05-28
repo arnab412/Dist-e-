@@ -1,10 +1,10 @@
 {
-  "projectId": "fit-replica-kcf5x",
-  "appId": "1:445439039374:web:6a3985a4af6b455a2636df",
-  "apiKey": "AIzaSyAKCFsQARTuen0tmCgZ58KniLBLHWWHhkY",
-  "authDomain": "fit-replica-kcf5x.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-690929c4-1f9d-4ee9-b152-fda71c897143",
-  "storageBucket": "fit-replica-kcf5x.firebasestorage.app",
-  "messagingSenderId": "445439039374",
+  "projectId": "edist-f27c0",
+  "appId": "1:420348262920:web:5bfd805508af103bc26fbd",
+  "apiKey": "AIzaSyAvFLw4wZyG9DNwjWdx6whZqgDpndx03l8",
+  "authDomain": "edist-f27c0.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "edist-f27c0.firebasestorage.app",
+  "messagingSenderId": "420348262920",
   "measurementId": ""
 }
