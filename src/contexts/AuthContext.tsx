@@ -128,28 +128,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Listen to global settings
     const unsubSettings = onSnapshot(doc(db, 'settings', 'global'), (docSn) => {
-      if (docSn.exists()) {
-        const data = docSn.data();
-        setSettings({ 
-          ...defaultSettings, 
-          ...data,
-          features: {
-            ...defaultSettings.features,
-            ...(data.features || {})
-          },
-          payment: {
-            ...defaultSettings.payment,
-            ...(data.payment || {})
-          },
-          pricing: {
-            ...defaultSettings.pricing,
-            ...(data.pricing || {})
-          }
-        } as GlobalSettings);
-      } else {
-        // If it doesn't exist, try to initialize it (fails if not admin, but that's fine, we fallback to default)
-        setDoc(doc(db, 'settings', 'global'), defaultSettings).catch(() => {});
+      try {
+        if (docSn.exists()) {
+          const data = docSn.data();
+          setSettings({ 
+            ...defaultSettings, 
+            ...data,
+            features: {
+              ...defaultSettings.features,
+              ...(data.features || {})
+            },
+            payment: {
+              ...defaultSettings.payment,
+              ...(data.payment || {})
+            },
+            pricing: {
+              ...defaultSettings.pricing,
+              ...(data.pricing || {})
+            }
+          } as GlobalSettings);
+        } else {
+          // If it doesn't exist, try to initialize it (fails if not admin, but that's fine, we fallback to default)
+          setDoc(doc(db, 'settings', 'global'), defaultSettings).catch(() => {});
+        }
+      } catch (err) {
+        console.warn("Error processing global settings snapshot:", err);
       }
+    }, (error) => {
+      console.warn("Firestore settings subscription failed. Fallback to defaults:", error);
     });
 
     // Safety timeout to prevent infinite loading if Firebase hangs
@@ -166,10 +172,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setProfile(null);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error fetching user profile during auth state change:", err);
-        setUser(null);
-        setProfile(null);
+        // Do not lock user out of Google Auth even if Firestore calls failed
+        setUser(user);
+        
+        const fallbackProfile: UserProfile = user ? {
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || user.email?.split('@')[0] || 'User',
+          photoURL: user.photoURL || '',
+          plan: 'free',
+          dailyLimit: 5,
+          currentDayUsage: 0,
+          totalUsage: 0,
+          lastResetDate: new Date().toISOString(),
+          isAdmin: user.email === 'arnabsingharoy4@gmail.com',
+          isBanned: false
+        } : null;
+        setProfile(fallbackProfile);
       } finally {
         clearTimeout(timeoutId);
         setLoading(false);
@@ -184,50 +205,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchOrCreateProfile = async (user: FirebaseUser) => {
-    const docRef = doc(db, 'users', user.uid);
-    const docSnap = await getDoc(docRef);
+    try {
+      const docRef = doc(db, 'users', user.uid);
+      const docSnap = await getDoc(docRef);
 
-    const isAdmin = user.email === 'arnabsingharoy4@gmail.com';
+      const isAdmin = user.email === 'arnabsingharoy4@gmail.com';
 
-    if (docSnap.exists()) {
-      let data = docSnap.data() as UserProfile;
-      if (isAdmin && !data.isAdmin) {
-        data.isAdmin = true;
-        await setDoc(docRef, { isAdmin: true }, { merge: true });
-      }
-      
-      const today = new Date().toISOString().split('T')[0];
-      const lastResetStr = data.lastResetDate ? data.lastResetDate.split('T')[0] : '';
-      
-      let needsUpdate = false;
-      let updates: any = {};
-
-      if (lastResetStr !== today) {
-        data.currentDayUsage = 0;
-        data.lastResetDate = new Date().toISOString();
-        updates.currentDayUsage = 0;
-        updates.lastResetDate = data.lastResetDate;
-        needsUpdate = true;
-      }
-
-      if (data.plan === 'pro' && data.planExpiresAt) {
-        if (new Date(data.planExpiresAt) < new Date()) {
-          data.plan = 'free';
-          updates.plan = 'free';
-          needsUpdate = true;
-          // You might want to trigger a toast here, but we can do that in the component
+      if (docSnap.exists()) {
+        let data = docSnap.data() as UserProfile;
+        if (isAdmin && !data.isAdmin) {
+          data.isAdmin = true;
+          await setDoc(docRef, { isAdmin: true }, { merge: true });
         }
-      }
+        
+        const today = new Date().toISOString().split('T')[0];
+        const lastResetStr = data.lastResetDate ? data.lastResetDate.split('T')[0] : '';
+        
+        let needsUpdate = false;
+        let updates: any = {};
 
-      if (needsUpdate) {
-        await setDoc(docRef, updates, { merge: true });
+        if (lastResetStr !== today) {
+          data.currentDayUsage = 0;
+          data.lastResetDate = new Date().toISOString();
+          updates.currentDayUsage = 0;
+          updates.lastResetDate = data.lastResetDate;
+          needsUpdate = true;
+        }
+
+        if (data.plan === 'pro' && data.planExpiresAt) {
+          if (new Date(data.planExpiresAt) < new Date()) {
+            data.plan = 'free';
+            updates.plan = 'free';
+            needsUpdate = true;
+          }
+        }
+
+        if (needsUpdate) {
+          await setDoc(docRef, updates, { merge: true });
+        }
+        setProfile(data);
+      } else {
+        const newProfile: UserProfile = {
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || '',
+          photoURL: user.photoURL || '',
+          plan: 'free',
+          dailyLimit: 5,
+          currentDayUsage: 0,
+          totalUsage: 0,
+          lastResetDate: new Date().toISOString(),
+          isAdmin: isAdmin,
+          isBanned: false
+        };
+        await setDoc(docRef, newProfile);
+        setProfile(newProfile);
       }
-      setProfile(data);
-    } else {
-      const newProfile: UserProfile = {
+    } catch (error: any) {
+      console.error("Firestore error in fetchOrCreateProfile, utilizing fallback:", error);
+      
+      const isAdmin = user.email === 'arnabsingharoy4@gmail.com';
+      const fallbackProfile: UserProfile = {
         uid: user.uid,
         email: user.email || '',
-        displayName: user.displayName || '',
+        displayName: user.displayName || user.email?.split('@')[0] || 'User',
         photoURL: user.photoURL || '',
         plan: 'free',
         dailyLimit: 5,
@@ -237,8 +278,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAdmin: isAdmin,
         isBanned: false
       };
-      await setDoc(docRef, newProfile);
-      setProfile(newProfile);
+      setProfile(fallbackProfile);
+
+      // Informative user prompt in Bengali & English
+      let errorMessage = `⚠️ ফায়ারবেস ডাটাবেস এরর (Firebase Database Error):\n${error.code || error.message || error}\n\n`;
+      errorMessage += `সম্ভাব্য কারণ ও সমাধান (Solutions):\n`;
+      errorMessage += `১. আপনি কি Firebase Console-এ Cloud Firestore ডাটাবেস চালু করেছেন? যদি না চালু থাকে, তবে Firebase Console এ গিয়ে "Firestore Database" এ ক্লিক করে একটি ডাটাবেস তৈরি বা চালু করুন।\n`;
+      errorMessage += `২. আপনার ডাটাবেসের Rules সেট করেছেন তো? আপনার প্রোজেক্টে থাকা "firestore.rules" ফাইলের রুলসগুলো সুন্দর করে কপি করে আপনার Firebase Console > Firestore Database > Rules ট্যাবে সম্পূর্ণ পেস্ট করে "Publish" করুন।\n`;
+      errorMessage += `৩. ডাটাবেস টেস্ট মোড (Test mode)-এ তৈরি করা থাকলে কোনো সমস্যা নেই।\n\n`;
+      errorMessage += `👉 নোট: আপাতত আপনাকে একটি ফালব্যাক প্রোফাইল দিয়ে লগইন করানো হয়েছে, যাতে আপনার ওয়েবসাইট সম্পূর্ণ চালু ও ব্যবহার করা যায়।`;
+      
+      alert(errorMessage);
     }
   };
 
